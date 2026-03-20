@@ -1,0 +1,9 @@
+## Interface: 120001
+## Title: The Great Song Logger
+## Author: Djinnet
+## Notes: Logs emotes from group members for the great song puzzle.
+## IconTexture: Interface\Icons\INV_Misc_Horn_01
+## Version: 0.0.2
+## SavedVariables: EmoteLoggerDB
+
+GreatSongLogger.lua
