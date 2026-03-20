@@ -3,7 +3,8 @@
 ## Author: Djinnet
 ## Notes: Logs emotes from group members for the great song puzzle.
 ## IconTexture: Interface\Icons\INV_Misc_Horn_01
-## Version: 0.0.2
+## Version: 0.0.3
 ## SavedVariables: EmoteLoggerDB
-
+embeds.xml
+GreatSongLogger_Settings.lua
 GreatSongLogger.lua

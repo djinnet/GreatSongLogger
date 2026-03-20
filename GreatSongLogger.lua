@@ -1,7 +1,6 @@
 local addonName = ...
-local EmoteLogger = CreateFrame("Frame")
+local EmoteLogger = LibStub("AceAddon-3.0"):NewAddon("GreatSongLogger", "AceEvent-3.0")
 
-Debug = true
 
 -- =========================
 -- Saved Data
@@ -24,17 +23,88 @@ EmoteLogger.songActive = false
 -- =========================
 EmoteLogger.groupMembers = {}
 
+-- =========================
+-- player buff cache
+-- =========================
+EmoteLogger.playerBuffData = {}
+
+-- =========================
+-- Debug
+-- =========================
+function EmoteLogger:DebugPrint(...)
+    if EmoteLogger_IsDebug and EmoteLogger_IsDebug() then
+        print("|cff8888ff[DEBUG]|r", ...)
+    end
+end
+
+-- =========================
+-- Spell ID for The Great Song buff
+-- =========================
+local SPELL_ID = 1266536
+
+function EmoteLogger:ScanRaidBuffs()
+    wipe(self.playerBuffData)
+
+    if not IsInRaid() then return end
+
+    for i = 1, GetNumGroupMembers() do
+        local unit = "raid" .. i
+        local name = UnitName(unit)
+
+        if name then
+            local fullName = Ambiguate(name, "none")
+            local hasBuff = false
+            local numbers = {}
+
+            for j = 1, 40 do
+                local aura = C_UnitAuras.GetAuraDataByIndex(unit, j, "HELPFUL")
+                if not aura then break end
+
+                if aura.spellId == SPELL_ID then
+                    hasBuff = true
+
+                    -- Extract numbers from description
+                    if aura.description then
+                        for num in aura.description:gmatch("%d+") do
+                            table.insert(numbers, tonumber(num))
+                        end
+                    end
+
+                    break
+                end
+            end
+
+
+            if EmoteLogger_IsDebug() then
+                print(string.format("|cff00ffff[EmoteLogger]|r Scanned %s: hasBuff=%s, numbers={%s}", fullName,
+                    tostring(hasBuff), table.concat(numbers, ", ")))
+            end
+
+            -- Store result
+            self.playerBuffData[fullName] = {
+                hasBuff = hasBuff,
+                numbers = numbers
+            }
+
+            -- Missing buff warning
+            if not hasBuff then
+                print("|cffff0000[EmoteLogger]|r " .. fullName .. " is missing Gift of Oddsight!")
+            end
+        end
+    end
+end
+
 local function IsInGroupOrRaid()
     return IsInGroup() or IsInRaid()
 end
 
 local function NormalizeName(name)
     if not name then return nil end
-    return Ambiguate(name, "none") -- keeps realm
+    return Ambiguate(name, "none")
 end
 
-local function UpdateGroup()
-    wipe(EmoteLogger.groupMembers)
+function EmoteLogger:UpdateGroup()
+    wipe(self.groupMembers)
 
     if not IsInGroupOrRaid() then return end
 
@@ -42,17 +112,17 @@ local function UpdateGroup()
         for i = 1, GetNumGroupMembers() do
             local name = GetRaidRosterInfo(i)
             if name then
-                EmoteLogger.groupMembers[Ambiguate(name, "short")] = true
+                self.groupMembers[Ambiguate(name, "short")] = true
             end
         end
     else
         for i = 1, GetNumSubgroupMembers() do
             local name = UnitName("party" .. i)
             if name then
-                EmoteLogger.groupMembers[name] = true
+                self.groupMembers[name] = true
             end
         end
-        EmoteLogger.groupMembers[UnitName("player")] = true
+        self.groupMembers[UnitName("player")] = true
     end
 end
 
@@ -82,7 +152,8 @@ local function GetRaidPosition(name)
 
     for i = 1, GetNumGroupMembers() do
         local raidName, _, subgroup = GetRaidRosterInfo(i)
-        if Debug then
+
+        if EmoteLogger_IsDebug() then
             print(string.format("|cff00ffff[EmoteLogger]|r Checking raid member %d: %s (Group %d)", i, raidName or "nil",
                 subgroup or 0))
             print(string.format("|cff00ffff[EmoteLogger]|r Comparing with: %s", name))
@@ -242,11 +313,19 @@ function EmoteLogger:AddRow(entry)
     local group, _ = GetRaidPosition(entry.name)
     local groupText = group and ("G" .. group .. " ") or ""
 
+    local buffData = EmoteLogger.playerBuffData[entry.name]
+
+    local numberText = ""
+    if buffData and buffData.numbers and #buffData.numbers > 0 then
+        numberText = " |cff00ffff[" .. table.concat(buffData.numbers, ",") .. "]|r"
+    end
+
     text:SetText(string.format(
-        "|cffaaaaaa[%s]|r %s|cff00ff00%s|r: %s",
+        "|cffaaaaaa[%s]|r %s|cff00ff00%s|r%s: %s",
         entry.time,
         groupText,
         entry.name,
+        numberText,
         entry.emote
     ))
 
@@ -288,8 +367,6 @@ function EmoteLogger:ProcessSequence(playerName, emote)
     end
 
     if not self.songActive then return end
-
-    -- If no active session → ignore
     if not session or not session.active then return end
 
     -- CANCEL sequence
@@ -333,86 +410,83 @@ function EmoteLogger:RefreshUI()
     end)
 end
 
--- =========================
--- Event Handling
--- =========================
-EmoteLogger:SetScript("OnEvent", function(self, event, ...)
-    if event == "GROUP_ROSTER_UPDATE" then
-        UpdateGroup()
-    elseif event == "CHAT_MSG_TEXT_EMOTE" then
-        local message, sender = ...
-        local lowermsg = message:lower()
+function EmoteLogger:CHAT_MSG_TEXT_EMOTE(_, message, sender)
+    local name = NormalizeName(sender)
+    local emoteKey = ExtractEmote(message)
+    local lowerMsg = message:lower()
 
-        local name = NormalizeName(sender)
-        local emoteKey = ExtractEmote(message)
+    -- Ignore before song starts
+    if not self.songActive and emoteKey ~= "bow" then return end
 
-        -- Ignore everything until song starts
-        if not EmoteLogger.songActive then
-            -- Allow bow to trigger start
-            if ExtractEmote(message) ~= "bow" then
-                return
+    if lowerMsg:find("the great song has unsuccessfully concluded") then
+        self.songActive = false
+        self:UpdateSongStatusUI()
+        -- end all active sessions
+        for player, session in pairs(self.playerSessions) do
+            if session.active then
+                -- Save failed attempt
+                self.completedSequences[player] = self.completedSequences[player] or {}
+                table.insert(self.completedSequences[player], session.sequence)
+                session.active = false
             end
         end
+        print(string.format("|cffff0000[EmoteLogger]|r The Great Song has ended for all players."))
+        return
+    end
 
-        if lowermsg:find("the great song has unsuccessfully concluded") then
-            EmoteLogger.songActive = false
-            EmoteLogger:UpdateSongStatusUI()
-            -- end all active sessions
-            for player, session in pairs(EmoteLogger.playerSessions) do
-                if session.active then
-                    -- Save failed attempt
-                    EmoteLogger.completedSequences[player] = EmoteLogger.completedSequences[player] or {}
-                    table.insert(EmoteLogger.completedSequences[player], session.sequence)
-                    session.active = false
-                end
-            end
-            print(string.format("|cffff0000[EmoteLogger]|r The Great Song has ended for all players."))
-            return
+    -- SOLO BEHAVIOR
+    if not IsInGroupOrRaid() then
+        if name == NormalizeName(UnitName("player")) and emoteKey == "bow" then
+            print("|cffffcc00You must be in a raid group.")
+            print("|cffffcc00Bow to the great flame to begin the sequence.")
         end
+        return
+    end
 
-        -- SOLO BEHAVIOR
-        if not IsInGroupOrRaid() then
-            if name == NormalizeName(UnitName("player")) and emoteKey == "bow" then
-                print("|cffffcc00You must be in a raid group.")
-                print("|cffffcc00Bow to the great flame to begin the sequence.")
-            end
-            return
-        end
+    local nameshort = Ambiguate(sender, "short")
 
-        local nameshort = Ambiguate(sender, "short")
+    if EmoteLogger_IsDebug() then
+        print(string.format("|cff00ffff[EmoteLogger]|r Detected emote from %s: %s", name, message))
+    end
 
-        if Debug then
-            print(string.format("|cff00ffff[EmoteLogger]|r Detected emote from %s: %s", name, message))
-        end
+    if self.groupMembers[nameshort] == true then
+        local entry = {
+            name = name,
+            emote = message,
+            time = date("%H:%M:%S")
+        }
 
-        if EmoteLogger.groupMembers[nameshort] == true then
-            local entry = {
-                name = name,
-                emote = message,
-                time = date("%H:%M:%S")
-            }
+        table.insert(self.logs, entry)
 
-            table.insert(self.logs, entry)
-
-            -- Limit log size
-            if #self.logs > MAX_LOGS then
-                table.remove(self.logs, 1)
-                if self.frame and self.frame:IsShown() then
-                    self:RefreshUI()
-                end
-                return
-            end
-
-            -- Sequence tracking
-            self:ProcessSequence(name, emoteKey)
-
-            -- Real-time UI update
+        -- Limit log size
+        if #self.logs > MAX_LOGS then
+            table.remove(self.logs, 1)
             if self.frame and self.frame:IsShown() then
-                self:AddRow(entry)
+                self:RefreshUI()
             end
+            return
+        end
+
+        -- Sequence tracking
+        self:ProcessSequence(name, emoteKey)
+
+        -- Real-time UI update
+        if self.frame and self.frame:IsShown() then
+            self:AddRow(entry)
         end
     end
-end)
+end
+
+function EmoteLogger:GROUP_ROSTER_UPDATE()
+    self:UpdateGroup()
+    self:ScanRaidBuffs()
+end
+
+function EmoteLogger:UNIT_AURA(_, unit)
+    if unit and unit:match("^raid%d+$") then
+        self:ScanRaidBuffs()
+    end
+end
 
 local function SendToChat(msg)
     if IsInRaid() then
@@ -440,7 +514,7 @@ end
 
 function EmoteLogger:ViewPlayerSequences(arg)
     local name = NormalizeName(arg)
-    local sequences = EmoteLogger.completedSequences[name]
+    local sequences = self.completedSequences[name]
 
     if not sequences or #sequences == 0 then
         print("|cffffff00No sequences found for " .. name)
@@ -460,7 +534,7 @@ function EmoteLogger:ViewGroupMembers()
     end
 
     print("|cff00ffffCurrent Group Members:|r")
-    for member, _ in pairs(EmoteLogger.groupMembers) do
+    for member, _ in pairs(self.groupMembers) do
         print("- " .. member)
     end
 end
@@ -540,10 +614,16 @@ SlashCmdList["EMOTELOGGER"] = function(msg)
 end
 
 -- =========================
--- Register Events
+-- Lifecycle
 -- =========================
-EmoteLogger:RegisterEvent("CHAT_MSG_TEXT_EMOTE")
-EmoteLogger:RegisterEvent("GROUP_ROSTER_UPDATE")
+function EmoteLogger:OnInitialize()
+    self:UpdateGroup()
+end
 
--- Initial population
-C_Timer.After(1, UpdateGroup)
+function EmoteLogger:OnEnable()
+    self:RegisterEvent("CHAT_MSG_TEXT_EMOTE")
+    self:RegisterEvent("GROUP_ROSTER_UPDATE")
+    self:RegisterEvent("UNIT_AURA")
+
+    self:DebugPrint("Addon Enabled")
+end
