@@ -9,7 +9,9 @@ EmoteLoggerDB = EmoteLoggerDB or {}
 -- =========================
 local defaults = {
     debug = false,
-    experimental = false
+    experimental = false,
+    showPersonalNumber = true,
+    showGroupNumber = true,
 }
 
 local function InitSettings()
@@ -33,16 +35,12 @@ function EmoteLogger_IsExperimental()
     return EmoteLoggerDB.settings and EmoteLoggerDB.settings.experimental
 end
 
-local function DebugPrint(msg)
-    if EmoteLogger_IsDebug() then
-        ForcePrint(msg, "debug")
-    end
+function EmoteLogger_ShowPersonalNumber()
+    return EmoteLoggerDB.settings and EmoteLoggerDB.settings.showPersonalNumber
 end
 
-local function ExperimentalPrint(msg)
-    if EmoteLogger_IsExperimental() then
-        ForcePrint(msg, "experimental")
-    end
+function EmoteLogger_ShowGroupNumber()
+    return EmoteLoggerDB.settings and EmoteLoggerDB.settings.showGroupNumber
 end
 
 function ForcePrint(msg, type)
@@ -68,6 +66,7 @@ local options = {
                 EmoteLoggerDB.settings.debug = val
                 ForcePrint("Debug mode set to " .. tostring(val), "debug")
             end,
+            order = 1
         },
         experimental = {
             type = 'toggle',
@@ -78,6 +77,29 @@ local options = {
                 EmoteLoggerDB.settings.experimental = val
                 ForcePrint("Experimental mode set to " .. tostring(val), "experimental")
             end,
+            order = 2
+        },
+        showPersonalNumber = {
+            type = 'toggle',
+            name = 'Show Personal Number',
+            desc = 'Toggle display of personal number in the UI.',
+            get = function() return EmoteLoggerDB.settings.showPersonalNumber end,
+            set = function(_, val)
+                EmoteLoggerDB.settings.showPersonalNumber = val
+                ForcePrint("Show Personal Number set to " .. tostring(val))
+            end,
+            order = 3
+        },
+        showGroupNumber = {
+            type = 'toggle',
+            name = 'Show Group Number',
+            desc = 'Toggle display of group number in the UI.',
+            get = function() return EmoteLoggerDB.settings.showGroupNumber end,
+            set = function(_, val)
+                EmoteLoggerDB.settings.showGroupNumber = val
+                ForcePrint("Show Group Number set to " .. tostring(val))
+            end,
+            order = 4
         },
     },
 }
