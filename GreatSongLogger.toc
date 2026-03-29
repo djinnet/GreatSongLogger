@@ -6,5 +6,6 @@
 ## Version: 0.0.4
 ## SavedVariables: EmoteLoggerDB
 embeds.xml
+GreatSongLogger_Table.lua
 GreatSongLogger_Settings.lua
 GreatSongLogger.lua

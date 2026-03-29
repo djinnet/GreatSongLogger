@@ -5,13 +5,12 @@ The command '/elog' allowed it to display the logger and '/elog help' shows diff
 
 Beware the addon will changes during development, and it is likely some functions wouldn't work later on.
 
-You need to have the gift of oddsight and go to the great flame in Hallowfall. 
-Then you must be in a raid group and bow to the flame to begin the song. 
+You need to have the gift of oddsight and go to the great flame in Hallowfall.
+Then you must be in a raid group and bow to the flame to begin the song.
 
-The addon will try to keep track of the emotes and each raid player's progress. 
+The addon will try to keep track of the emotes and each raid player's progress.
 
 But core function; this is more or less an emote logger.
-
 
 ## Emote Logger Commands
 
@@ -26,3 +25,7 @@ But core function; this is more or less an emote logger.
 /elog share - Share completed sequences in chat
 
 /elog viewgroup - View current group members in logger
+
+/elog findln <number> - Find lucky numbers for a given ID (1-1000)
+
+/elog findms <measure> <singer> - Find lucky numbers for a given measure and singer
